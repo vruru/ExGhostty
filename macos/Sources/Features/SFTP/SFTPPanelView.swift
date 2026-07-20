@@ -9,7 +9,10 @@ final class SFTPPanelViewModel: ObservableObject {
 
     @Published var currentPath: String = ""
     @Published var items: [SFTPFileItem] = []
-    @Published var showHidden: Bool = false
+    // Server administration commonly happens in directories such as /root where
+    // most useful entries are dotfiles. Show them by default so the remote directory
+    // never appears empty or incomplete on first open.
+    @Published var showHidden: Bool = true
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     @Published var selectedItems: Set<UUID> = [] {
@@ -20,6 +23,9 @@ final class SFTPPanelViewModel: ObservableObject {
     weak var taskListWindowController: SFTPTaskListWindowController?
 
     private var cancellables = Set<AnyCancellable>()
+    /// Identifies the newest directory request so a slow, stale response cannot
+    /// overwrite a later path or hidden-file selection.
+    private var refreshGeneration: UInt = 0
     /// 远端用户主目录，用于把标题中的 `~` 展开为绝对路径。
     private var remoteHomeDirectory: String?
     /// 根据用户名推断的默认远端主目录。root 用户为 /root，其他用户为 /home/<username>。
@@ -124,7 +130,10 @@ final class SFTPPanelViewModel: ObservableObject {
     // MARK: - 导航
 
     func refresh() {
-        guard !isLoading else { return }
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
+        let requestedPath = currentPath
+        let requestedShowHidden = showHidden
         isLoading = true
         errorMessage = nil
         // 刷新前记录已选中的文件名，刷新后按文件名恢复勾选状态。
@@ -133,10 +142,11 @@ final class SFTPPanelViewModel: ObservableObject {
             do {
                 let list = try await SFTPService.shared.listDirectory(
                     connection: connection,
-                    path: currentPath,
-                    showHidden: showHidden
+                    path: requestedPath,
+                    showHidden: requestedShowHidden
                 )
                 await MainActor.run {
+                    guard self.refreshGeneration == generation else { return }
                     self.items = list.sorted {
                         if $0.isDirectory != $1.isDirectory {
                             return $0.isDirectory && !$1.isDirectory
@@ -148,6 +158,7 @@ final class SFTPPanelViewModel: ObservableObject {
                 }
             } catch {
                 await MainActor.run {
+                    guard self.refreshGeneration == generation else { return }
                     self.errorMessage = error.localizedDescription
                     self.isLoading = false
                 }

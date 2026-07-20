@@ -12,6 +12,7 @@ private func sidebarBackgroundColor(from color: NSColor) -> NSColor {
 /// 自定义 NSSplitView，隐藏可见分隔线但保留拖拽热区。
 class SidebarSplitView: NSSplitView {
     var dividerFillColor: NSColor?
+    var showsResizeHandle = false
     
     override var isOpaque: Bool {
         false
@@ -23,6 +24,11 @@ class SidebarSplitView: NSSplitView {
             color.setFill()
             NSBezierPath.fill(rect)
         }
+        if showsResizeHandle {
+            NSColor.separatorColor.withAlphaComponent(0.7).setFill()
+            let handle = NSRect(x: rect.midX - 0.5, y: rect.minY, width: 1, height: rect.height)
+            NSBezierPath.fill(handle)
+        }
     }
 }
 
@@ -31,6 +37,10 @@ class SidebarSplitView: NSSplitView {
 /// 用原生 NSSplitView 实现的侧边栏 + 终端分栏布局。
 /// 分隔条由系统管理，不会出现自定义 layer resize 时的白色竖线问题。
 class SidebarSplitViewController: NSViewController, NSSplitViewDelegate {
+
+    private static let minimumFunctionPanelWidth: CGFloat = 240
+    private static let maximumFunctionPanelWidth: CGFloat = 600
+    private static let minimumTerminalWidthWithFunctionPanel: CGFloat = 220
 
     // MARK: - 子视图
 
@@ -77,11 +87,14 @@ class SidebarSplitViewController: NSViewController, NSSplitViewDelegate {
         }
     }
 
-    private var _functionPanelWidth: CGFloat = 360
+    private var _functionPanelWidth: CGFloat = 320
     var functionPanelWidth: CGFloat {
         get { _functionPanelWidth }
         set {
-            _functionPanelWidth = max(360, min(newValue, 600))
+            _functionPanelWidth = max(
+                Self.minimumFunctionPanelWidth,
+                min(newValue, Self.maximumFunctionPanelWidth)
+            )
             updateFunctionPanelWidth()
         }
     }
@@ -238,7 +251,10 @@ class SidebarSplitViewController: NSViewController, NSSplitViewDelegate {
 
         // --- Function panel split view (terminal + function panel) ---
         functionTerminalSplitView.isVertical = true
-        functionTerminalSplitView.dividerStyle = .thin
+        // A pane splitter provides a practical drag target; the previous one-point
+        // divider was effectively impossible to resize on a Retina display.
+        functionTerminalSplitView.dividerStyle = .paneSplitter
+        functionTerminalSplitView.showsResizeHandle = true
         functionTerminalSplitView.delegate = self
         functionTerminalSplitView.wantsLayer = true
         functionTerminalSplitView.layer?.backgroundColor = NSColor.clear.cgColor
@@ -639,10 +655,32 @@ class SidebarSplitViewController: NSViewController, NSSplitViewDelegate {
 
     private func updateFunctionPanelWidth() {
         guard isViewLoaded else { return }
-        let width = functionPanelVisible ? _functionPanelWidth : 0
+        let width = displayedFunctionPanelWidth(in: functionTerminalSplitView)
         let dividerThickness = functionTerminalSplitView.dividerThickness
         let position = max(0, functionTerminalSplitView.bounds.width - width - dividerThickness)
         functionTerminalSplitView.setPosition(position, ofDividerAt: 0)
+    }
+
+    /// Returns the panel widths currently available while preserving enough room
+    /// for a usable terminal. On small windows the panel shrinks below its preferred
+    /// width instead of squeezing the terminal down to a few columns.
+    private func functionPanelWidthRange(in splitView: NSSplitView) -> ClosedRange<CGFloat> {
+        let availableWidth = max(0, splitView.bounds.width - splitView.dividerThickness)
+        let minimumWidth = min(Self.minimumFunctionPanelWidth, availableWidth)
+        let maximumWidth = max(
+            minimumWidth,
+            min(
+                Self.maximumFunctionPanelWidth,
+                max(0, availableWidth - Self.minimumTerminalWidthWithFunctionPanel)
+            )
+        )
+        return minimumWidth...maximumWidth
+    }
+
+    private func displayedFunctionPanelWidth(in splitView: NSSplitView) -> CGFloat {
+        guard functionPanelVisible else { return 0 }
+        let range = functionPanelWidthRange(in: splitView)
+        return max(range.lowerBound, min(_functionPanelWidth, range.upperBound))
     }
 
     /// 根据当前聚焦的终端 surface 计算行/列数，用于 expect 脚本初始化 SSH PTY 尺寸。
@@ -670,7 +708,8 @@ class SidebarSplitViewController: NSViewController, NSSplitViewDelegate {
         }
         if splitView === functionTerminalSplitView {
             let maxPos = splitView.bounds.width - splitView.dividerThickness
-            return functionPanelVisible ? maxPos - 600 : maxPos
+            guard functionPanelVisible else { return maxPos }
+            return maxPos - functionPanelWidthRange(in: splitView).upperBound
         }
         return collapsed ? 32 : 150
     }
@@ -686,7 +725,8 @@ class SidebarSplitViewController: NSViewController, NSSplitViewDelegate {
         }
         if splitView === functionTerminalSplitView {
             let maxPos = splitView.bounds.width - splitView.dividerThickness
-            return functionPanelVisible ? maxPos - 360 : maxPos
+            guard functionPanelVisible else { return maxPos }
+            return maxPos - functionPanelWidthRange(in: splitView).lowerBound
         }
         return collapsed ? 32 : min(400, splitView.bounds.width - splitView.dividerThickness)
     }
@@ -702,8 +742,10 @@ class SidebarSplitViewController: NSViewController, NSSplitViewDelegate {
         }
         if splitView === functionTerminalSplitView {
             let maxPos = splitView.bounds.width - splitView.dividerThickness
-            let minPos: CGFloat = functionPanelVisible ? maxPos - 600 : maxPos
-            let maxAllowed: CGFloat = functionPanelVisible ? maxPos - 360 : maxPos
+            guard functionPanelVisible else { return maxPos }
+            let widthRange = functionPanelWidthRange(in: splitView)
+            let minPos = maxPos - widthRange.upperBound
+            let maxAllowed = maxPos - widthRange.lowerBound
             return max(minPos, min(proposedPosition, maxAllowed))
         }
         let minPos: CGFloat = collapsed ? 32 : 150
@@ -734,7 +776,7 @@ class SidebarSplitViewController: NSViewController, NSSplitViewDelegate {
         }
 
         if splitView === functionTerminalSplitView {
-            let rightWidth = functionPanelVisible ? _functionPanelWidth : 0
+            let rightWidth = displayedFunctionPanelWidth(in: splitView)
             let leftWidth = max(0, newBounds.width - rightWidth - dividerThickness)
             splitView.subviews[0].frame = NSRect(
                 x: 0, y: 0,
@@ -771,7 +813,8 @@ class SidebarSplitViewController: NSViewController, NSSplitViewDelegate {
         if resizedSplitView === functionTerminalSplitView {
             guard functionPanelVisible else { return }
             let newWidth = resizedSplitView.subviews[1].frame.width
-            if newWidth >= 360 && newWidth <= 600 {
+            let widthRange = functionPanelWidthRange(in: resizedSplitView)
+            if newWidth >= widthRange.lowerBound && newWidth <= widthRange.upperBound {
                 _functionPanelWidth = newWidth
             }
             return
