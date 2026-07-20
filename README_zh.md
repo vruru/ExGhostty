@@ -75,7 +75,8 @@ ExGhostty **并不是** 一个追求大而全的工具。它只希望在 **SSH �
 - **iCloud 同步** —— 通过 iCloud Drive 在多台 Mac 间同步配置、
   SSH 主机、端口转发规则、代码片段与 AI 设置。SSH 密码和 AI API Key
   使用由加密密码派生的 AES-256-GCM 密钥保护；加密密码只保存在 iCloud
-  钥匙串中，不会写进 iCloud Drive 文件夹。
+  钥匙串中，不会写进 iCloud Drive 文件夹；应用签名授权允许时，该密码可通过
+  iCloud 钥匙串同步，否则保存在本机钥匙串中。
 - 基于快速、原生的 **Ghostty** 终端引擎构建。
 
 ---

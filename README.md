@@ -87,7 +87,8 @@ choice that fits the way they work.
 - **iCloud sync** — synchronize configuration, SSH hosts, port-forward rules,
   code snippets and AI settings across your Macs. SSH passwords and the AI API
   key use password-derived AES-256-GCM encryption; the encryption password is
-  kept in iCloud Keychain rather than the iCloud Drive folder.
+  kept in macOS Keychain rather than the iCloud Drive folder, and synchronizes
+  through iCloud Keychain when the app's signing profile permits it.
 - Built on the fast, native **Ghostty** terminal engine.
 
 ---

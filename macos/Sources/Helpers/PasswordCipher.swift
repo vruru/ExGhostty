@@ -6,7 +6,8 @@ import Security
 /// SSH 密码和 AI API Key 的 AES 对称加密存储工具。
 ///
 /// `enc:v2:` 使用用户设置的加密密码，经 PBKDF2-SHA256 派生 AES-256-GCM 密钥。
-/// 加密密码只保存在 Keychain（可通过 iCloud Keychain 同步），不会写入 iCloud Drive。
+/// 加密密码只保存在 Keychain；签名授权允许时通过 iCloud Keychain 同步，
+/// 否则安全降级到本机 Keychain。密码不会写入 iCloud Drive。
 /// `enc:v1:` 是旧版随机 AES 密钥格式；读取后会在下一次保存时自动迁移到 v2。
 enum PasswordCipher {
     private static let legacyPrefix = "enc:v1:"
@@ -45,10 +46,11 @@ enum PasswordCipher {
         (try? loadEncryptionPassword()) != nil
     }
 
-    /// 保存或更新用户加密密码。该凭据只进入可同步的 Keychain 条目。
+    /// 保存或更新用户加密密码。优先写入可同步 Keychain；ad-hoc 构建没有
+    /// Data Protection Keychain entitlement 时安全降级到本机 Keychain。
     static func setEncryptionPassword(_ password: String) throws {
         guard !password.isEmpty else { throw CipherError.encryptionPasswordRequired }
-        try upsertSynchronizableItem(
+        try upsertBestAvailableItem(
             account: encryptionPasswordAccount,
             data: Data(password.utf8)
         )
@@ -179,12 +181,17 @@ enum PasswordCipher {
     // MARK: - Keychain
 
     private static func loadEncryptionPassword() throws -> String? {
-        if let data = try readKeychainItem(account: encryptionPasswordAccount, synchronizable: true) {
+        if let data = try readSynchronizableItemIfAvailable(account: encryptionPasswordAccount) {
             return String(data: data, encoding: .utf8)
         }
-        // 兼容可能由测试版写入的本机条目，并在读取时迁移为同步条目。
+        // 兼容 ad-hoc 构建或测试版写入的本机条目。正式签名允许时，读取后
+        // 尽力迁移到同步条目；迁移失败不应影响本机解密。
         if let localData = try readKeychainItem(account: encryptionPasswordAccount, synchronizable: false) {
-            try upsertSynchronizableItem(account: encryptionPasswordAccount, data: localData)
+            try? upsertKeychainItem(
+                account: encryptionPasswordAccount,
+                data: localData,
+                synchronizable: true
+            )
             return String(data: localData, encoding: .utf8)
         }
         return nil
@@ -194,10 +201,14 @@ enum PasswordCipher {
         // 升级设备上的本机旧密钥必须优先：已有 v1 数据就是由它加密的。随后把
         // 同一字节迁移到同步条目，避免先命中一份不相干的云端竞态密钥。
         if let legacyData = try readKeychainItem(account: legacyKeyAccount, synchronizable: false) {
-            try upsertSynchronizableItem(account: legacyKeyAccount, data: legacyData)
+            try? upsertKeychainItem(
+                account: legacyKeyAccount,
+                data: legacyData,
+                synchronizable: true
+            )
             return SymmetricKey(data: legacyData)
         }
-        if let data = try readKeychainItem(account: legacyKeyAccount, synchronizable: true) {
+        if let data = try readSynchronizableItemIfAvailable(account: legacyKeyAccount) {
             return SymmetricKey(data: data)
         }
         throw CipherError.keyUnavailable
@@ -213,7 +224,7 @@ enum PasswordCipher {
 
         let key = SymmetricKey(size: .bits256)
         let data = key.withUnsafeBytes { Data($0) }
-        let stored = try addSynchronizableItemIfMissing(account: legacyKeyAccount, data: data)
+        let stored = try addBestAvailableItemIfMissing(account: legacyKeyAccount, data: data)
         return SymmetricKey(data: stored)
     }
 
@@ -240,31 +251,89 @@ enum PasswordCipher {
         return item as? Data
     }
 
-    private static func addSynchronizableItemIfMissing(account: String, data: Data) throws -> Data {
+    /// A synchronizable item uses the data protection keychain, whose access groups
+    /// require a provisioning-profile-authorized entitlement. Local ad-hoc releases
+    /// therefore receive errSecMissingEntitlement and must use the file-based keychain.
+    private static func readSynchronizableItemIfAvailable(account: String) throws -> Data? {
+        do {
+            return try readKeychainItem(account: account, synchronizable: true)
+        } catch {
+            guard isMissingEntitlement(error) else { throw error }
+            return nil
+        }
+    }
+
+    private static func addBestAvailableItemIfMissing(account: String, data: Data) throws -> Data {
+        do {
+            return try addKeychainItemIfMissing(
+                account: account,
+                data: data,
+                synchronizable: true
+            )
+        } catch {
+            guard isMissingEntitlement(error) else { throw error }
+            return try addKeychainItemIfMissing(
+                account: account,
+                data: data,
+                synchronizable: false
+            )
+        }
+    }
+
+    private static func upsertBestAvailableItem(account: String, data: Data) throws {
+        do {
+            try upsertKeychainItem(account: account, data: data, synchronizable: true)
+        } catch {
+            guard isMissingEntitlement(error) else { throw error }
+            try upsertKeychainItem(account: account, data: data, synchronizable: false)
+        }
+    }
+
+    private static func addKeychainItemIfMissing(
+        account: String,
+        data: Data,
+        synchronizable: Bool
+    ) throws -> Data {
         var attributes = baseQuery(account: account)
-        attributes[kSecAttrSynchronizable as String] = true
+        attributes[kSecAttrSynchronizable as String] = synchronizable
         attributes[kSecValueData as String] = data
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        if synchronizable {
+            attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        }
 
         let status = SecItemAdd(attributes as CFDictionary, nil)
         if status == errSecSuccess { return data }
         if status == errSecDuplicateItem,
-           let existing = try readKeychainItem(account: account, synchronizable: true) {
+           let existing = try readKeychainItem(account: account, synchronizable: synchronizable) {
             return existing
         }
         guard status != errSecDuplicateItem else { throw CipherError.keyUnavailable }
         throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
     }
 
-    private static func upsertSynchronizableItem(account: String, data: Data) throws {
+    private static func upsertKeychainItem(
+        account: String,
+        data: Data,
+        synchronizable: Bool
+    ) throws {
         var query = baseQuery(account: account)
-        query[kSecAttrSynchronizable as String] = true
+        query[kSecAttrSynchronizable as String] = synchronizable
         let updates = [kSecValueData as String: data]
         let updateStatus = SecItemUpdate(query as CFDictionary, updates as CFDictionary)
         if updateStatus == errSecSuccess { return }
         guard updateStatus == errSecItemNotFound else {
             throw NSError(domain: NSOSStatusErrorDomain, code: Int(updateStatus))
         }
-        _ = try addSynchronizableItemIfMissing(account: account, data: data)
+        _ = try addKeychainItemIfMissing(
+            account: account,
+            data: data,
+            synchronizable: synchronizable
+        )
+    }
+
+    private static func isMissingEntitlement(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == NSOSStatusErrorDomain
+            && nsError.code == Int(errSecMissingEntitlement)
     }
 }
