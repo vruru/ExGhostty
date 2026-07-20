@@ -259,7 +259,7 @@ enum SSHTester {
 
     private static func commonSSHOptions(config: SSHTestConfig) -> [String] {
         var options: [String] = []
-        let timeoutSec = max(1, Double(config.timeoutMs) / 1000.0)
+        let timeoutSec = SSHOptionFormatter.wholeSeconds(milliseconds: config.timeoutMs)
         options += ["-o", "ConnectTimeout=\(timeoutSec)"]
         if config.heartbeatMs > 0 {
             let heartbeatSec = max(1, Int(config.heartbeatMs / 1000))

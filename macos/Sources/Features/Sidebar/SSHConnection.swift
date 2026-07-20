@@ -3,6 +3,16 @@ import SwiftUI
 import Combine
 import GhosttyKit
 
+enum SSHOptionFormatter {
+    /// OpenSSH time-valued options accept whole seconds, not decimal values.
+    /// Round up so a sub-second remainder never shortens the configured timeout.
+    static func wholeSeconds(milliseconds: UInt32) -> UInt32 {
+        let seconds = milliseconds / 1_000
+        let roundedUp = seconds + (milliseconds % 1_000 == 0 ? 0 : 1)
+        return max(1, roundedUp)
+    }
+}
+
 // MARK: - 认证方式
 
 enum SSHAuthMode: String, Codable, CaseIterable {
@@ -298,8 +308,8 @@ struct SSHConnection: Identifiable, Codable, Hashable {
     var sshOptions: String {
         var args = ""
 
-        // 连接超时（秒，支持小数）
-        let timeoutSec = max(1, Double(timeoutMs) / 1000.0)
+        // OpenSSH 只接受整数秒；向上取整避免实际超时短于设置值。
+        let timeoutSec = SSHOptionFormatter.wholeSeconds(milliseconds: timeoutMs)
         args += "-o ConnectTimeout=\(timeoutSec) "
 
         // 心跳保活（秒，取整至少 1 秒）
