@@ -1093,7 +1093,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         // nib so the window does not collapse to a one-pixel-wide title bar before
         // the terminal surface reports its configured initial size.
         let initialWindowContentSize = window.contentLayoutRect.size
-        splitVC.loadViewIfNeeded()
+        _ = splitVC.view
         splitVC.view.frame = NSRect(origin: .zero, size: initialWindowContentSize)
         splitVC.preferredContentSize = initialWindowContentSize
 

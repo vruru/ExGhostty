@@ -152,7 +152,8 @@ enum PasswordCipher {
     }
 
     private static func deriveKey(password: String, salt: Data) throws -> SymmetricKey {
-        var derived = Data(count: 32)
+        let derivedByteCount = 32
+        var derived = Data(count: derivedByteCount)
         let passwordBytes = Array(password.utf8)
         let status: Int32 = derived.withUnsafeMutableBytes { derivedBuffer in
             salt.withUnsafeBytes { saltBuffer in
@@ -166,7 +167,7 @@ enum PasswordCipher {
                         CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
                         pbkdf2Rounds,
                         derivedBuffer.bindMemory(to: UInt8.self).baseAddress,
-                        derived.count
+                        derivedByteCount
                     )
                 }
             }
