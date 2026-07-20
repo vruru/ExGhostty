@@ -511,7 +511,13 @@ final class SettingsModel: ObservableObject {
 
         // 密码变更后立即用新密码重写本机 SSH 密文；批量同步标记会在下面统一触发。
         if isChangingEncryptionPassword {
-            SSHStore.shared.save(notifySync: false)
+            do {
+                try SSHStore.shared.reloadConnections()
+                try SSHStore.shared.saveThrowing(notifySync: false)
+            } catch {
+                showSaveError(error.localizedDescription)
+                return false
+            }
         }
 
         var changedCategories: Set<ICloudSyncManager.SyncCategory> = [.config, .aiSettings]

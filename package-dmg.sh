@@ -2,7 +2,7 @@
 
 set -eu
 
-project_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+project_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 app_path=${1:-"$project_dir/zig-out/ExGhostty.app"}
 dmg_path=${2:-"$project_dir/zig-out/ExGhostty.dmg"}
 

@@ -5,6 +5,20 @@ import OSLog
 
 /// 管理 SSH 连接和分组的存储，带 UserDefaults 持久化
 class SSHStore: ObservableObject {
+    enum PersistenceError: LocalizedError {
+        case connectionsUnavailable(String)
+        case encodingFailed(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .connectionsUnavailable(let reason):
+                return "The saved SSH connections are not available: \(reason)"
+            case .encodingFailed(let reason):
+                return "The SSH connections could not be saved securely: \(reason)"
+            }
+        }
+    }
+
     // MARK: - Published 属性
 
     @Published var connections: [SSHConnection] = []
@@ -17,6 +31,11 @@ class SSHStore: ObservableObject {
 
     private let connectionsKey = "ghostty_ssh_connections"
     private let groupsKey = "ghostty_ssh_groups"
+    private(set) var connectionLoadError: Error?
+    private let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.mitchellh.ghostty",
+        category: "SSHStore"
+    )
 
     private init() {
         load()
@@ -91,13 +110,33 @@ class SSHStore: ObservableObject {
 
     // MARK: - 持久化
 
-    func save(notifySync: Bool = true) {
-        if let connData = try? JSONEncoder().encode(connections) {
-            UserDefaults.standard.set(connData, forKey: connectionsKey)
+    @discardableResult
+    func save(notifySync: Bool = true) -> Bool {
+        do {
+            try saveThrowing(notifySync: notifySync)
+            return true
+        } catch {
+            logger.error("Failed to save SSH data: \(error.localizedDescription, privacy: .public)")
+            return false
         }
-        if let groupData = try? JSONEncoder().encode(groups) {
-            UserDefaults.standard.set(groupData, forKey: groupsKey)
+    }
+
+    func saveThrowing(notifySync: Bool = true) throws {
+        if let connectionLoadError {
+            throw PersistenceError.connectionsUnavailable(connectionLoadError.localizedDescription)
         }
+
+        let connData: Data
+        let groupData: Data
+        do {
+            connData = try JSONEncoder().encode(connections)
+            groupData = try JSONEncoder().encode(groups)
+        } catch {
+            throw PersistenceError.encodingFailed(error.localizedDescription)
+        }
+
+        UserDefaults.standard.set(connData, forKey: connectionsKey)
+        UserDefaults.standard.set(groupData, forKey: groupsKey)
         UserDefaults.standard.synchronize()
 
         if notifySync, !ICloudSyncManager.shared.isImporting {
@@ -108,14 +147,42 @@ class SSHStore: ObservableObject {
     }
 
     private func load() {
-        if let connData = UserDefaults.standard.data(forKey: connectionsKey),
-           let conns = try? JSONDecoder().decode([SSHConnection].self, from: connData) {
-            connections = cleanupJumpHostReferences(conns)
+        do {
+            try reloadConnections()
+        } catch {
+            logger.error("Failed to load SSH connections: \(error.localizedDescription, privacy: .public)")
         }
         if let groupData = UserDefaults.standard.data(forKey: groupsKey),
            let gs = try? JSONDecoder().decode([SSHGroup].self, from: groupData) {
             groups = gs
         }
+    }
+
+    /// Retry decoding persisted connections after a Keychain password becomes available.
+    /// Until this succeeds, saves and sync uploads remain blocked so unreadable data is
+    /// never replaced with an empty connection list.
+    func reloadConnections() throws {
+        guard let connData = UserDefaults.standard.data(forKey: connectionsKey) else {
+            connectionLoadError = nil
+            return
+        }
+
+        do {
+            let conns = try JSONDecoder().decode([SSHConnection].self, from: connData)
+            connections = cleanupJumpHostReferences(conns)
+            connectionLoadError = nil
+        } catch {
+            connectionLoadError = error
+            throw error
+        }
+    }
+
+    /// Replace local data only after a complete sync payload has decoded successfully.
+    func replaceFromSync(connections: [SSHConnection], groups: [SSHGroup]) throws {
+        self.connections = connections
+        self.groups = groups
+        connectionLoadError = nil
+        try saveThrowing()
     }
 
     /// 清理指向已不存在连接（包括自身）的跳板机引用，防止加载旧数据时显示幽灵项目

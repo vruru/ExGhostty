@@ -268,6 +268,9 @@ final class ICloudSyncManager: ObservableObject {
             // 配置文件本身即为本地镜像。
             break
         case .ssh:
+            if let loadError = SSHStore.shared.connectionLoadError {
+                throw loadError
+            }
             if SSHStore.shared.connections.contains(where: { !$0.password.isEmpty }),
                !PasswordCipher.hasEncryptionPassword {
                 throw PasswordCipher.CipherError.encryptionPasswordRequired
@@ -314,9 +317,10 @@ final class ICloudSyncManager: ObservableObject {
         case .ssh:
             let data = try Data(contentsOf: sourceURL)
             let payload = try JSONDecoder().decode(SSHSyncPayload.self, from: data)
-            SSHStore.shared.connections = payload.connections
-            SSHStore.shared.groups = payload.groups
-            SSHStore.shared.save()
+            try SSHStore.shared.replaceFromSync(
+                connections: payload.connections,
+                groups: payload.groups
+            )
         case .portForward:
             let data = try Data(contentsOf: sourceURL)
             let rules = try JSONDecoder().decode([PortForwardRule].self, from: data)
@@ -363,10 +367,15 @@ final class ICloudSyncManager: ObservableObject {
     func validateEncryptionPassword(_ candidate: String) -> Bool {
         for category in [SyncCategory.ssh, .aiSettings] {
             guard let url = iCloudURL(for: category),
-                  let data = try? Data(contentsOf: url),
-                  let object = try? JSONSerialization.jsonObject(with: data),
-                  let encrypted = firstPasswordEncryptedValue(in: object) else { continue }
-            return PasswordCipher.validate(candidate, encryptedValue: encrypted)
+                  FileManager.default.fileExists(atPath: url.path) else { continue }
+            guard let data = try? Data(contentsOf: url),
+                  let object = try? JSONSerialization.jsonObject(with: data) else {
+                return false
+            }
+            guard let encrypted = firstPasswordEncryptedValue(in: object) else { continue }
+            if !PasswordCipher.validate(candidate, encryptedValue: encrypted) {
+                return false
+            }
         }
         return true
     }
