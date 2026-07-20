@@ -20,24 +20,27 @@ final class AIAssistantService: ObservableObject {
 
     @Published var configuration: AIConfiguration = AIConfiguration(endpoint: "", apiKey: "", model: "")
 
-    private var configObserver: NSObjectProtocol?
+    private var configObservers: [NSObjectProtocol] = []
 
     private init() {
         loadConfiguration()
 
-        configObserver = NotificationCenter.default.addObserver(
-            forName: .ghosttyConfigDidChange,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.loadConfiguration()
+        for name in [Notification.Name.ghosttyConfigDidChange, .aiSettingsDidChange] {
+            let observer = NotificationCenter.default.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.loadConfiguration()
+                }
             }
+            configObservers.append(observer)
         }
     }
 
     deinit {
-        if let observer = configObserver {
+        for observer in configObservers {
             NotificationCenter.default.removeObserver(observer)
         }
     }
@@ -162,6 +165,10 @@ final class AIAssistantService: ObservableObject {
 
         return displayContent
     }
+}
+
+extension Notification.Name {
+    static let aiSettingsDidChange = Notification.Name("com.mitchellh.ghostty.aiSettingsDidChange")
 }
 
 /// 流式过滤掉 <think>...</think> 包裹的 thinking 内容。

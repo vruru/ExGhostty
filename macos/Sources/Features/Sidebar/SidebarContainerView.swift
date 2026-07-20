@@ -786,6 +786,21 @@ class SidebarSplitViewController: NSViewController, NSSplitViewDelegate {
 
     // MARK: - 终端内容视图
 
+    /// Converts the terminal surface's requested size into the complete window
+    /// content size by adding ExGhostty's sidebars, panel, dividers, and tab bar.
+    func windowContentSize(forTerminalContentSize terminalSize: NSSize) -> NSSize {
+        let leftSidebarWidth = collapsed ? 32 : _sidebarWidth
+        let functionWidth = functionPanelVisible ? _functionPanelWidth : 0
+        let dividerWidth = splitView.dividerThickness
+            + rightSidebarSplitView.dividerThickness
+            + functionTerminalSplitView.dividerThickness
+
+        return NSSize(
+            width: terminalSize.width + leftSidebarWidth + 32 + functionWidth + dividerWidth,
+            height: terminalSize.height + 28
+        )
+    }
+
     /// 返回终端内容视图，供 TerminalController 使用
     var terminalView: NSView? { terminalContentView }
 }

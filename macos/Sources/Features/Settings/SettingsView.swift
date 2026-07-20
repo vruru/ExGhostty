@@ -289,6 +289,9 @@ final class SettingsModel: ObservableObject {
 
     // Sync
     @Published var iCloudSync: Bool = false
+    @Published var syncEncryptionPassword: String = ""
+    @Published var syncEncryptionPasswordConfirmation: String = ""
+    @Published private(set) var hasSyncEncryptionPassword: Bool = false
 
     init(config: Ghostty.Config) {
         self.config = config
@@ -400,10 +403,52 @@ final class SettingsModel: ObservableObject {
         aiModel = ud.string(forKey: "ai-model") ?? ""
         // 默认开启：仅对从未设置过该开关的用户生效。
         iCloudSync = ud.object(forKey: "icloud-sync") as? Bool ?? true
+        hasSyncEncryptionPassword = PasswordCipher.hasEncryptionPassword
     }
 
-    func save() {
-        guard let url = fileURL else { return }
+    @discardableResult
+    func save() -> Bool {
+        guard let url = fileURL else { return false }
+
+        let isChangingEncryptionPassword = !syncEncryptionPassword.isEmpty
+        let hasSensitiveSyncData = !aiApiKey.isEmpty
+            || SSHStore.shared.connections.contains(where: { !$0.password.isEmpty })
+        if iCloudSync, !hasSyncEncryptionPassword, !isChangingEncryptionPassword, hasSensitiveSyncData {
+            showSaveError(
+                "Set an encryption password before enabling iCloud sync for SSH passwords or the AI API Key.".localized
+            )
+            return false
+        }
+        if isChangingEncryptionPassword {
+            guard syncEncryptionPassword.count >= 8 else {
+                showSaveError("The iCloud encryption password must contain at least 8 characters.".localized)
+                return false
+            }
+            guard syncEncryptionPassword == syncEncryptionPasswordConfirmation else {
+                showSaveError("The two iCloud encryption passwords do not match.".localized)
+                return false
+            }
+            if hasSyncEncryptionPassword,
+               !PasswordCipher.matchesEncryptionPassword(syncEncryptionPassword) {
+                showSaveError(
+                    "A different encryption password is already configured. Password rotation is not supported from this screen.".localized
+                )
+                return false
+            }
+            if !hasSyncEncryptionPassword,
+               !ICloudSyncManager.shared.validateEncryptionPassword(syncEncryptionPassword) {
+                showSaveError("The encryption password cannot decrypt the existing iCloud data.".localized)
+                return false
+            }
+            do {
+                try PasswordCipher.setEncryptionPassword(syncEncryptionPassword)
+                hasSyncEncryptionPassword = true
+            } catch {
+                showSaveError(error.localizedDescription)
+                return false
+            }
+        }
+
         let writer = ConfigFileWriter(url: url)
 
         writer.setValue(language == "en" ? nil : language, forKey: "language")
@@ -464,9 +509,29 @@ final class SettingsModel: ObservableObject {
         ud.set(aiModel, forKey: "ai-model")
         ud.set(iCloudSync, forKey: "icloud-sync")
 
-        (NSApp.delegate as? AppDelegate)?.ghostty.reloadConfig()
+        // 密码变更后立即用新密码重写本机 SSH 密文；批量同步标记会在下面统一触发。
+        if isChangingEncryptionPassword {
+            SSHStore.shared.save(notifySync: false)
+        }
 
-        ICloudSyncManager.shared.localDidChange(category: .config)
+        var changedCategories: Set<ICloudSyncManager.SyncCategory> = [.config, .aiSettings]
+        if isChangingEncryptionPassword {
+            changedCategories.insert(.ssh)
+        }
+        ICloudSyncManager.shared.localDidChange(categories: changedCategories)
+
+        (NSApp.delegate as? AppDelegate)?.ghostty.reloadConfig()
+        NotificationCenter.default.post(name: .aiSettingsDidChange, object: nil)
+        return true
+    }
+
+    private func showSaveError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Unable to save settings".localized
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK".localized)
+        alert.runModal()
     }
 }
 
@@ -627,8 +692,9 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
                 .padding(.horizontal, 8)
             Button("Save".localized) {
-                model.save()
-                onSave()
+                if model.save() {
+                    onSave()
+                }
             }
             .buttonStyle(.borderedProminent)
         }
@@ -659,6 +725,31 @@ struct SettingsView: View {
                 Toggle("", isOn: $model.iCloudSync)
                     .toggleStyle(.switch)
             }
+
+            settingsRow(label: "Encryption Password".localized) {
+                SecureField(
+                    model.hasSyncEncryptionPassword
+                        ? "Configured — leave blank to keep it".localized
+                        : "At least 8 characters".localized,
+                    text: $model.syncEncryptionPassword
+                )
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 300)
+            }
+
+            settingsRow(label: "Confirm Password".localized) {
+                SecureField("", text: $model.syncEncryptionPasswordConfirmation)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 300)
+                    .disabled(model.syncEncryptionPassword.isEmpty)
+            }
+
+            Text(
+                "SSH passwords and the AI API Key are encrypted with this password. The password is stored only in Keychain; enter the same password on a new Mac if iCloud Keychain has not synchronized yet.".localized
+            )
+            .font(.system(size: 11))
+            .foregroundColor(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 

@@ -1312,3 +1312,48 @@ msgstr "バージョン：%@"
 
 msgid "A brand-new SSH tool based on Ghostty"
 msgstr "Ghostty をベースにした新しい SSH ツール"
+
+msgid "Encryption Password"
+msgstr "暗号化パスワード"
+
+msgid "Confirm Password"
+msgstr "パスワードの確認"
+
+msgid "Configured — leave blank to keep it"
+msgstr "設定済み — 変更しない場合は空欄"
+
+msgid "At least 8 characters"
+msgstr "8 文字以上"
+
+msgid "SSH passwords and the AI API Key are encrypted with this password. The password is stored only in Keychain; enter the same password on a new Mac if iCloud Keychain has not synchronized yet."
+msgstr "SSH パスワードと AI API Key はこのパスワードで暗号化されます。パスワードはキーチェーンにのみ保存されます。iCloud キーチェーンがまだ同期されていない場合は、新しい Mac で同じパスワードを入力してください。"
+
+msgid "Unable to save settings"
+msgstr "設定を保存できません"
+
+msgid "The iCloud encryption password must contain at least 8 characters."
+msgstr "iCloud 暗号化パスワードは 8 文字以上にしてください。"
+
+msgid "The two iCloud encryption passwords do not match."
+msgstr "2 つの iCloud 暗号化パスワードが一致しません。"
+
+msgid "The encryption password cannot decrypt the existing iCloud data."
+msgstr "この暗号化パスワードでは既存の iCloud データを復号できません。"
+
+msgid "A different encryption password is already configured. Password rotation is not supported from this screen."
+msgstr "別の暗号化パスワードがすでに設定されています。この画面ではパスワードの変更はサポートされていません。"
+
+msgid "The encrypted value is invalid."
+msgstr "暗号化データが無効です。"
+
+msgid "The iCloud Keychain encryption key is not available yet."
+msgstr "iCloud キーチェーンの暗号化キーはまだ利用できません。"
+
+msgid "Set an iCloud encryption password before syncing passwords or API keys."
+msgstr "パスワードや API Key を同期する前に、iCloud 暗号化パスワードを設定してください。"
+
+msgid "The encryption password cannot decrypt the synchronized data."
+msgstr "暗号化パスワードで同期データを復号できません。"
+
+msgid "Set an encryption password before enabling iCloud sync for SSH passwords or the AI API Key."
+msgstr "SSH パスワードまたは AI API Key の iCloud 同期を有効にする前に、暗号化パスワードを設定してください。"

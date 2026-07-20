@@ -1087,6 +1087,16 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             rootView: { terminalView }
         )
 
+        // Replacing a nib-backed window's contentViewController with a controller
+        // whose root view is an NSSplitView can temporarily give AppKit a fitting
+        // size of zero. Preserve the 800x600 (or restored) content size from the
+        // nib so the window does not collapse to a one-pixel-wide title bar before
+        // the terminal surface reports its configured initial size.
+        let initialWindowContentSize = window.contentLayoutRect.size
+        splitVC.loadViewIfNeeded()
+        splitVC.view.frame = NSRect(origin: .zero, size: initialWindowContentSize)
+        splitVC.preferredContentSize = initialWindowContentSize
+
         // Set the initial content size on the terminal container so that
         // intrinsicContentSize returns the correct value immediately,
         // without waiting for @FocusedValue to propagate through the
@@ -1094,6 +1104,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         splitVC.initialContentSize = focusedSurface?.initialSize
 
         window.contentViewController = splitVC
+        window.setContentSize(initialWindowContentSize)
 
         // 侧边栏模式：允许标签组（新终端作为标签页打开）
         // 原生标签栏已在 TerminalWindow.addTitlebarAccessoryViewController 中隐藏
@@ -1742,7 +1753,10 @@ extension TerminalController {
         /// 需要取嵌套在右侧分栏里的 TerminalViewContainer 的值。
         private static func intrinsicContentSize(for window: NSWindow) -> CGSize? {
             if let splitVC = window.contentViewController as? SidebarSplitViewController {
-                return splitVC.terminalView?.intrinsicContentSize
+                guard let terminalSize = splitVC.terminalView?.intrinsicContentSize else {
+                    return nil
+                }
+                return splitVC.windowContentSize(forTerminalContentSize: terminalSize)
             }
             return window.contentView?.intrinsicContentSize
         }

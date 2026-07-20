@@ -91,7 +91,7 @@ class SSHStore: ObservableObject {
 
     // MARK: - 持久化
 
-    func save() {
+    func save(notifySync: Bool = true) {
         if let connData = try? JSONEncoder().encode(connections) {
             UserDefaults.standard.set(connData, forKey: connectionsKey)
         }
@@ -100,7 +100,7 @@ class SSHStore: ObservableObject {
         }
         UserDefaults.standard.synchronize()
 
-        if !ICloudSyncManager.shared.isImporting {
+        if notifySync, !ICloudSyncManager.shared.isImporting {
             Task { @MainActor in
                 ICloudSyncManager.shared.localDidChange(category: .ssh)
             }

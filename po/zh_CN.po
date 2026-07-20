@@ -1315,3 +1315,48 @@ msgstr "版本：%@"
 
 msgid "A brand-new SSH tool based on Ghostty"
 msgstr "一款基于 Ghostty 的全新 SSH 工具"
+
+msgid "Encryption Password"
+msgstr "加密密码"
+
+msgid "Confirm Password"
+msgstr "确认密码"
+
+msgid "Configured — leave blank to keep it"
+msgstr "已配置——留空表示保持不变"
+
+msgid "At least 8 characters"
+msgstr "至少 8 个字符"
+
+msgid "SSH passwords and the AI API Key are encrypted with this password. The password is stored only in Keychain; enter the same password on a new Mac if iCloud Keychain has not synchronized yet."
+msgstr "SSH 密码和 AI API Key 会使用此密码加密。该密码只保存在钥匙串中；如果 iCloud 钥匙串尚未同步，请在新 Mac 上输入相同密码。"
+
+msgid "Unable to save settings"
+msgstr "无法保存设置"
+
+msgid "The iCloud encryption password must contain at least 8 characters."
+msgstr "iCloud 加密密码必须至少包含 8 个字符。"
+
+msgid "The two iCloud encryption passwords do not match."
+msgstr "两次输入的 iCloud 加密密码不一致。"
+
+msgid "The encryption password cannot decrypt the existing iCloud data."
+msgstr "此加密密码无法解密现有的 iCloud 数据。"
+
+msgid "A different encryption password is already configured. Password rotation is not supported from this screen."
+msgstr "已经配置了另一个加密密码。当前界面暂不支持更换加密密码。"
+
+msgid "The encrypted value is invalid."
+msgstr "加密数据无效。"
+
+msgid "The iCloud Keychain encryption key is not available yet."
+msgstr "iCloud 钥匙串中的加密密钥尚不可用。"
+
+msgid "Set an iCloud encryption password before syncing passwords or API keys."
+msgstr "同步密码或 API Key 前，请先设置 iCloud 加密密码。"
+
+msgid "The encryption password cannot decrypt the synchronized data."
+msgstr "加密密码无法解密同步数据。"
+
+msgid "Set an encryption password before enabling iCloud sync for SSH passwords or the AI API Key."
+msgstr "为 SSH 密码或 AI API Key 开启 iCloud 同步前，请先设置加密密码。"

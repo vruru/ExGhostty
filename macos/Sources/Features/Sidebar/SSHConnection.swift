@@ -133,7 +133,9 @@ struct SSHConnection: Identifiable, Codable, Hashable {
         self.username = try container.decodeIfPresent(String.self, forKey: .username) ?? ""
         self.groupID = try container.decodeIfPresent(UUID.self, forKey: .groupID)
         self.authMode = try container.decodeIfPresent(SSHAuthMode.self, forKey: .authMode) ?? .password
-        self.password = PasswordCipher.decrypt(try container.decodeIfPresent(String.self, forKey: .password) ?? "")
+        self.password = try PasswordCipher.decrypt(
+            container.decodeIfPresent(String.self, forKey: .password) ?? ""
+        )
         self.keyPath = try container.decodeIfPresent(String.self, forKey: .keyPath)
         self.connectionMethod = {
             let raw = (try? container.decodeIfPresent(String.self, forKey: .connectionMethod)) ?? nil

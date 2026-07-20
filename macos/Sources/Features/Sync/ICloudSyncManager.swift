@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 import OSLog
 
-/// 将 Ghostty 配置、SSH 配置、端口转发规则、代码片段与 iCloud Drive 双向同步。
+/// 将 Ghostty 配置、SSH 配置、端口转发规则、代码片段和 AI 设置与 iCloud Drive 双向同步。
 /// iCloud Drive 上的目录固定为 `~/Library/Mobile Documents/com~apple~CloudDocs/ExGhostty`。
 final class ICloudSyncManager: ObservableObject {
     static let shared = ICloudSyncManager()
@@ -42,7 +42,7 @@ final class ICloudSyncManager: ObservableObject {
     }
 
     enum SyncCategory: String, CaseIterable {
-        case config, ssh, portForward, codeSnippet
+        case config, ssh, portForward, codeSnippet, aiSettings
 
         var fileName: String {
             switch self {
@@ -50,6 +50,7 @@ final class ICloudSyncManager: ObservableObject {
             case .ssh: return "ssh.json"
             case .portForward: return "portforward.json"
             case .codeSnippet: return "snippets.json"
+            case .aiSettings: return "ai.json"
             }
         }
     }
@@ -133,7 +134,15 @@ final class ICloudSyncManager: ObservableObject {
         do {
             try ensureDirectories()
             for category in SyncCategory.allCases {
-                try sync(category: category)
+                do {
+                    try sync(category: category)
+                } catch {
+                    // 单个类别失败（例如新电脑上 Keychain 密码尚未到达）不应阻止
+                    // 其他类别同步；轮询会在 30 秒后再次尝试。
+                    logger.error(
+                        "iCloud sync failed for \(category.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                    )
+                }
             }
         } catch {
             logger.error("iCloud sync failed: \(error.localizedDescription, privacy: .public)")
@@ -144,7 +153,16 @@ final class ICloudSyncManager: ObservableObject {
     /// 无论同步是否开启，都会记录该类的本地最后修改时间，
     /// 以便之后开启同步时能按真实修改时间比较新旧。
     @MainActor func localDidChange(category: SyncCategory) {
-        lastLocalChange[category] = Date()
+        localDidChange(categories: [category])
+    }
+
+    /// 一次记录多个相关类别并只触发一轮同步，避免设置保存过程中某个类别先同步、
+    /// 又把同一批尚未标记的本地修改覆盖掉。
+    @MainActor func localDidChange(categories: Set<SyncCategory>) {
+        let now = Date()
+        for category in categories {
+            lastLocalChange[category] = now
+        }
         persistLastLocalChange()
         guard isEnabled else { return }
         sync()
@@ -156,7 +174,7 @@ final class ICloudSyncManager: ObservableObject {
         switch category {
         case .config:
             return (NSApp.delegate as? AppDelegate)?.ghostty.configFileURL
-        case .ssh, .portForward, .codeSnippet:
+        case .ssh, .portForward, .codeSnippet, .aiSettings:
             return localSyncDirectoryURL.appendingPathComponent(category.fileName)
         }
     }
@@ -174,13 +192,12 @@ final class ICloudSyncManager: ObservableObject {
         let localExists = FileManager.default.fileExists(atPath: localURL.path)
         let iCloudExists = FileManager.default.fileExists(atPath: iCloudURL.path)
 
-        // SSH/端口转发/代码片段首次运行（本地镜像不存在）时的初始化处理。
+        // 非 config 类别首次运行（本地镜像不存在）时的初始化处理。
         if !localExists && category != .config {
             if iCloudExists {
                 // 云端已有数据：下载并导入，避免用本地旧数据覆盖云端。
-                try copyPreservingAttributes(from: iCloudURL, to: localURL)
-                try importFromLocal(category: category, sourceURL: localURL)
-                markLocalChangeTime(category, modificationDate(of: localURL) ?? Date())
+                try downloadAndImport(category: category, iCloudURL: iCloudURL, localURL: localURL)
+                markLocalChangeTime(category, modificationDate(of: iCloudURL) ?? Date())
                 logger.info("Initialized \(category.rawValue, privacy: .public) from iCloud")
             } else {
                 // 云端也没有：用当前本地数据生成镜像并上传。
@@ -211,9 +228,8 @@ final class ICloudSyncManager: ObservableObject {
 
         if !localExists {
             // 云端有、本地无：下载并导入。
-            try copyPreservingAttributes(from: iCloudURL, to: localURL)
-            try importFromLocal(category: category, sourceURL: localURL)
-            markLocalChangeTime(category, modificationDate(of: localURL) ?? Date())
+            try downloadAndImport(category: category, iCloudURL: iCloudURL, localURL: localURL)
+            markLocalChangeTime(category, modificationDate(of: iCloudURL) ?? Date())
             logger.info("Downloaded \(category.rawValue, privacy: .public) from iCloud")
             return
         }
@@ -232,8 +248,7 @@ final class ICloudSyncManager: ObservableObject {
 
         if iCloudMtime.timeIntervalSince(localChangeTime) > timeTolerance {
             // 云端更新：下载覆盖本地并导入。
-            try copyPreservingAttributes(from: iCloudURL, to: localURL)
-            try importFromLocal(category: category, sourceURL: localURL)
+            try downloadAndImport(category: category, iCloudURL: iCloudURL, localURL: localURL)
             markLocalChangeTime(category, iCloudMtime)
             logger.info("Imported \(category.rawValue, privacy: .public) from iCloud")
         } else if localChangeTime.timeIntervalSince(iCloudMtime) > timeTolerance {
@@ -253,6 +268,10 @@ final class ICloudSyncManager: ObservableObject {
             // 配置文件本身即为本地镜像。
             break
         case .ssh:
+            if SSHStore.shared.connections.contains(where: { !$0.password.isEmpty }),
+               !PasswordCipher.hasEncryptionPassword {
+                throw PasswordCipher.CipherError.encryptionPasswordRequired
+            }
             let payload = SSHSyncPayload(
                 connections: SSHStore.shared.connections,
                 groups: SSHStore.shared.groups
@@ -265,6 +284,18 @@ final class ICloudSyncManager: ObservableObject {
             let payload = CodeSnippetSyncPayload(
                 categories: CodeSnippetStore.shared.categories,
                 snippets: CodeSnippetStore.shared.snippets
+            )
+            try writeJSON(payload, to: localSyncDirectoryURL.appendingPathComponent(category.fileName))
+        case .aiSettings:
+            let defaults = UserDefaults.ghostty
+            let apiKey = defaults.string(forKey: "ai-apikey") ?? ""
+            if !apiKey.isEmpty, !PasswordCipher.hasEncryptionPassword {
+                throw PasswordCipher.CipherError.encryptionPasswordRequired
+            }
+            let payload = AISettingsSyncPayload(
+                endpoint: defaults.string(forKey: "ai-endpoint") ?? "",
+                model: defaults.string(forKey: "ai-model") ?? "",
+                encryptedAPIKey: try PasswordCipher.encrypt(apiKey)
             )
             try writeJSON(payload, to: localSyncDirectoryURL.appendingPathComponent(category.fileName))
         }
@@ -303,7 +334,54 @@ final class ICloudSyncManager: ObservableObject {
             }
 
             CodeSnippetStore.shared.save()
+        case .aiSettings:
+            let data = try Data(contentsOf: sourceURL)
+            let payload = try JSONDecoder().decode(AISettingsSyncPayload.self, from: data)
+            let apiKey = try PasswordCipher.decrypt(payload.encryptedAPIKey)
+            let defaults = UserDefaults.ghostty
+            defaults.set(payload.endpoint, forKey: "ai-endpoint")
+            defaults.set(payload.model, forKey: "ai-model")
+            defaults.set(apiKey, forKey: "ai-apikey")
+            NotificationCenter.default.post(name: .aiSettingsDidChange, object: nil)
         }
+    }
+
+    /// 对非 config 文件先直接解析并解密云端源文件，成功后才更新本地镜像。
+    /// 密码错误或 Keychain 尚未同步时，本地镜像时间不会前移，下一轮仍会重试。
+    private func downloadAndImport(category: SyncCategory, iCloudURL: URL, localURL: URL) throws {
+        if category == .config {
+            try copyPreservingAttributes(from: iCloudURL, to: localURL)
+            try importFromLocal(category: category, sourceURL: localURL)
+        } else {
+            try importFromLocal(category: category, sourceURL: iCloudURL)
+            try copyPreservingAttributes(from: iCloudURL, to: localURL)
+        }
+    }
+
+    /// 新设备手动输入加密密码时，用已有云端 v2 密文实际验证。
+    /// 云端尚无 v2 秘密时没有可验证对象，此时允许建立第一份加密数据。
+    func validateEncryptionPassword(_ candidate: String) -> Bool {
+        for category in [SyncCategory.ssh, .aiSettings] {
+            guard let url = iCloudURL(for: category),
+                  let data = try? Data(contentsOf: url),
+                  let object = try? JSONSerialization.jsonObject(with: data),
+                  let encrypted = firstPasswordEncryptedValue(in: object) else { continue }
+            return PasswordCipher.validate(candidate, encryptedValue: encrypted)
+        }
+        return true
+    }
+
+    private func firstPasswordEncryptedValue(in value: Any) -> String? {
+        if let string = value as? String, PasswordCipher.isPasswordEncrypted(string) {
+            return string
+        }
+        if let array = value as? [Any] {
+            return array.compactMap(firstPasswordEncryptedValue(in:)).first
+        }
+        if let dictionary = value as? [String: Any] {
+            return dictionary.values.compactMap(firstPasswordEncryptedValue(in:)).first
+        }
+        return nil
     }
 
     // MARK: - 目录与文件工具
@@ -388,4 +466,10 @@ private struct SSHSyncPayload: Codable {
 private struct CodeSnippetSyncPayload: Codable {
     var categories: [CodeSnippetCategory]
     var snippets: [CodeSnippet]
+}
+
+private struct AISettingsSyncPayload: Codable {
+    var endpoint: String
+    var model: String
+    var encryptedAPIKey: String
 }

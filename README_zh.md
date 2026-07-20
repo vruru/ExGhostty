@@ -73,7 +73,9 @@ ExGhostty **并不是** 一个追求大而全的工具。它只希望在 **SSH �
 - **设置窗口** —— 全部通过原生 GUI 配置（无需手写配置文件），
   含主题预览与快捷键设置。
 - **iCloud 同步** —— 通过 iCloud Drive 在多台 Mac 间同步配置、
-  SSH 主机、端口转发规则与代码片段。
+  SSH 主机、端口转发规则、代码片段与 AI 设置。SSH 密码和 AI API Key
+  使用由加密密码派生的 AES-256-GCM 密钥保护；加密密码只保存在 iCloud
+  钥匙串中，不会写进 iCloud Drive 文件夹。
 - 基于快速、原生的 **Ghostty** 终端引擎构建。
 
 ---
@@ -90,7 +92,8 @@ ExGhostty **并不是** 一个追求大而全的工具。它只希望在 **SSH �
 ./release.sh
 ```
 
-编译产物位于 `zig-out/ExGhostty.app`。
+发布产物为 `zig-out/ExGhostty.dmg`。打开 DMG 后将 ExGhostty 拖入“应用程序”
+即可安装；DMG 成功生成后，中间使用的 `.app` 会自动移除。
 
 ## 使用方法
 

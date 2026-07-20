@@ -84,8 +84,10 @@ choice that fits the way they work.
 ### And more
 - **Settings window** — configure everything through a native GUI (no hand
   editing of config files), including themes with previews and keybindings.
-- **iCloud sync** — synchronize configuration, SSH hosts, port-forward rules
-  and code snippets across your Macs via iCloud Drive.
+- **iCloud sync** — synchronize configuration, SSH hosts, port-forward rules,
+  code snippets and AI settings across your Macs. SSH passwords and the AI API
+  key use password-derived AES-256-GCM encryption; the encryption password is
+  kept in iCloud Keychain rather than the iCloud Drive folder.
 - Built on the fast, native **Ghostty** terminal engine.
 
 ---
@@ -102,7 +104,9 @@ choice that fits the way they work.
 ./release.sh
 ```
 
-The release app bundle is produced at `zig-out/ExGhostty.app`.
+The release artifact is `zig-out/ExGhostty.dmg`; open it and drag ExGhostty
+into the Applications folder. The intermediate app bundle is removed after the
+DMG is created successfully.
 
 ## Usage
 
