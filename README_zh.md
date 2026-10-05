@@ -78,19 +78,126 @@ ExGhostty **并不是** 一个追求大而全的工具。它只希望在 **SSH �
 
 ---
 
-## 环境要求
+## 架构
 
-- macOS
-- [Zig](https://ziglang.org) **0.15.2**
-- Xcode（用于构建 macOS 应用）
+ExGhostty 是基于 Ghostty 终端引擎构建的 macOS 原生桌面 SSH 客户端，
+主要分为以下几层：
+
+| 层 | 源码位置 | 职责 |
+| --- | --- | --- |
+| 终端引擎 | `src/terminal/`、`src/termio/`、`src/renderer/` | 终端模拟、PTY 与进程输入输出、渲染 |
+| 原生桥接 | `include/ghostty.h`、`macos/Sources/Ghostty/` | C 嵌入接口与 Swift 绑定，通过 `macos/GhosttyKit.xcframework` 链接 |
+| macOS 应用 | `macos/Sources/App/macOS/`、`macos/Sources/Features/` | 应用生命周期、SwiftUI/AppKit 窗口、SSH 工具、设置和同步 |
+| 构建与资源 | `build.zig`、`src/build/`、`pkg/`、`po/`、`src/shell-integration/` | Zig 依赖、Xcode 集成、翻译、主题和 shell 集成 |
+
+SSH 工具调用 macOS 本地进程和 OpenSSH；`SSHCommandExecutor` 为文件浏览器
+及其他工具提供共享的远程命令执行和 SSH 控制通道。文件浏览器通过 SSH
+执行远程命令，使用 rsync 传输文件。AI 助手通过兼容 OpenAI 的
+`chat/completions` 接口接收流式回复。设置使用 Ghostty 配置和 UserDefaults，
+iCloud 同步将配置和工具数据复制到 iCloud Drive。
+
+仓库还保留了 Ghostty 的 GTK 运行时 `src/apprt/gtk/` 和独立的
+`libghostty-vt` 终端库。上述 SSH 界面功能实现在 macOS 应用中。
+
+## 环境要求与准备
+
+- **macOS**：ExGhostty 应用目标的最低部署版本为 macOS 13.0；构建主机需要
+  能运行下方指定的 Xcode 工具链。
+- **Zig 0.15.2**：版本依据为 [build.zig.zon](build.zig.zon) 中的
+  `minimum_zig_version`。版本检查接受相同主版本、次版本且补丁版本不低于
+  此值的 Zig，不接受更新的次版本系列。
+- **完整的 Xcode 26**：需要 macOS 26 SDK、iOS SDK 和 Metal Toolchain，
+  详见 [HACKING.md](HACKING.md#xcode-version-and-sdks)。仅安装 Command Line
+  Tools 不足以构建；该文档还记录了 Zig 0.15.x 与 Xcode 26.4 的链接问题。
+- 首次下载 Zig 依赖时需要网络连接。
+- **Nushell**：仅使用可选的 `macos/build.nu` 构建脚本时需要。
+
+克隆本项目并检查工具链：
+
+```bash
+git clone https://github.com/vruru/ExGhostty.git
+cd ExGhostty
+zig version
+xcode-select -p
+xcodebuild -version
+```
+
+如果当前开发目录指向 Command Line Tools，请在构建前切换到完整的 Xcode 安装。
 
 ## 编译
+
+以下命令均从仓库根目录运行。调试构建：
+
+```bash
+zig build
+```
+
+使用仓库脚本进行干净的优化构建：
 
 ```bash
 ./release.sh
 ```
 
-编译产物位于 `zig-out/ExGhostty.app`。
+`release.sh` 会删除 `zig-out/` 和 `.zig-cache/`，再执行
+`zig build -Doptimize=ReleaseSmall`。需要保留缓存进行增量构建时，
+直接运行这条 Zig 命令。
+
+两种构建均将应用包安装到 `zig-out/ExGhostty.app`。Zig 先构建 GhosttyKit
+XCFramework 和资源，再调用 Xcode。内部 Xcode 工程、target 和 scheme
+仍使用 **Ghostty** 名称，应用产物名为 **ExGhostty**。调试构建使用 Xcode
+的 `Debug` 配置，优化构建使用 `ReleaseLocal` 配置。
+
+仅修改 Swift 时，可使用 Nushell 脚本迭代。先准备底层库和资源，再构建应用：
+
+```bash
+zig build -Demit-macos-app=false
+macos/build.nu
+open macos/build/Debug/ExGhostty.app
+```
+
+脚本默认使用 `Ghostty` scheme、`Debug` 配置和 `build` 动作。修改底层 Zig
+代码后需要重新构建库。更多 macOS 开发说明见 [macos/AGENTS.md](macos/AGENTS.md)。
+
+## 运行与安装
+
+启动 Zig 构建的应用包：
+
+```bash
+open zig-out/ExGhostty.app
+```
+
+本地安装时，通过 Finder 将 `zig-out/ExGhostty.app` 拖入 Applications。
+ExGhostty 是桌面应用，无需部署服务端。`release.sh` 生成本地应用包，
+不包含 DMG 打包、公证或发布步骤。
+
+## 配置与环境变量
+
+**标准构建与启动所需的项目专用环境变量：无。** shell 提供常规的 `PATH`
+和 `HOME`。下表仅列出可选变量名称与用途：
+
+| 名称 | 用途 |
+| --- | --- |
+| `GHOSTTY_CONFIG_PATH` | 启动 macOS 应用时指定其他配置文件 |
+| `GHOSTTY_LOG` | 控制终端核心的日志输出目标 |
+| `DISPLAY`、`XAUTHORITY` | 启用 SSH X11 转发时使用的 X11 环境 |
+
+SSH 连接信息和凭据在应用中填写。密码辅助程序会在内部为子进程设置
+`GHOSTTY_ASKPASS_PASSWORD`、`SSH_ASKPASS`、`SSH_ASKPASS_REQUIRE` 和 `SSHPASS`，
+用户无需手动导出这些变量。
+
+AI 助手需要在设置中填写 `ai-endpoint`、`ai-apikey` 和 `ai-model`。
+三项均为启用助手的必要配置。endpoint 应填写 API 基础地址，应用会追加
+`chat/completions`。这些是配置键；服务从配置文件或 UserDefaults 读取，
+不读取 `OPENAI_API_KEY` 环境变量。
+
+各项可选功能还需要对应的工具或服务：
+
+- SSH 会话与密码辅助程序使用 `/usr/bin/ssh` 和 `/usr/bin/expect`。
+- 文件传输在本机使用 `/usr/bin/rsync`，远端也需要 rsync；压缩包操作还会使用 tar。
+- 会话复用需要在会话所在的机器上安装所选的 `tmux` 或 `zellij`。
+- 系统监控需要在被监控的机器上安装 `xtop`；未检测到时，面板提供安装说明链接。
+- 跨 Mac 同步需要各台 Mac 的 iCloud Drive 可用。设置中的同步开关默认开启，
+  同步目录为 `~/Library/Mobile Documents/com~apple~CloudDocs/ExGhostty/`。
 
 ## 使用方法
 
@@ -98,10 +205,33 @@ ExGhostty **并不是** 一个追求大而全的工具。它只希望在 **SSH �
 2. 使用 **左侧栏** 创建和管理 SSH 连接与本地终端。
 3. 使用 **右侧栏** 打开各项工具：SFTP、端口转发、会话复用、系统监控、
    代码片段与 AI 助手。
-4. 打开 **设置** 调整外观、主题、快捷键、同步与语言 —— 无需编辑配置文件。
+4. 打开 **设置** 调整外观、主题、快捷键、同步与语言。
 
----
+## 开发文档与检查
+
+先阅读 [AGENTS.md](AGENTS.md) 和待修改目录下的开发指南。
+修改终端引擎时优先运行针对性的 Zig 测试：
+
+```bash
+zig build test -Dtest-filter='<test name>'
+zig build test-lib-vt -Dtest-filter='<filter>'
+```
+
+准备好底层库和资源后，可运行 macOS 单元测试：
+
+```bash
+macos/build.nu --action test
+```
+
+该脚本跳过需要额外界面权限的 `GhosttyUITests`。终端库使用示例位于
+[example/](example/)。
+
+当前仓库没有 `docs/` 目录。[HACKING.md](HACKING.md)、
+[PACKAGING.md](PACKAGING.md) 和 [CONTRIBUTING.md](CONTRIBUTING.md)
+保留了上游 Ghostty 的开发说明，其中的上游发布地址和已不存在的 `nix/`
+目录、`flake.nix` 引用不适用于 ExGhostty 的准备或发布流程。
+本项目的构建步骤与依赖版本应以本 README、仓库内构建脚本和 `build.zig.zon` 为准。
 
 ## 许可证
 
-ExGhostty 免费且开源，许可证详情请见仓库。
+ExGhostty 使用 [MIT 许可证](LICENSE)。

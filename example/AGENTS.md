@@ -1,14 +1,17 @@
 # Example Libghostty Projects
 
-Each example is a standalone project with its own `build.zig`,
-`build.zig.zon`, `README.md`, and `src/main.c` (or `.zig`). Examples are
-auto-discovered by CI via `example/*/build.zig.zon`, so no workflow file
-edits are needed when adding a new example.
+Each example is a standalone project with its own `README.md`. Most C and
+Zig examples have `build.zig`, `build.zig.zon`, and `src/main.c` (or `.zig`);
+the CMake, Swift, and browser examples use their own build instructions.
+Read the selected example's README before building it.
+
+This fork's checked-in GitHub workflows do not include the upstream example
+build matrix. Do not assume that adding an example runs or validates it in CI.
 
 ## Adding a New Example
 
-1. Copy an existing example directory (e.g., `c-vt-encode-focus/`) as a
-   starting point.
+1. For a Zig-built example, copy an existing directory
+   (e.g., `c-vt-encode-focus/`) as a starting point.
 2. Update `build.zig.zon`: change `.name`, generate a **new unique**
    `.fingerprint` value (a random `u64` hex literal), and keep
    `.minimum_zig_version` matching the others.
@@ -35,5 +38,5 @@ snippet markers in sync with the headers in `include/ghostty/vt/`.
 ## Conventions
 
 - Executable names use underscores: `c_vt_encode_focus` (not hyphens).
-- All C examples link `ghostty-vt` via `lazyDependency("ghostty", ...)`.
+- Zig-built C examples link `ghostty-vt` via `lazyDependency("ghostty", ...)`.
 - `build.zig` files follow a common template — keep them consistent.
