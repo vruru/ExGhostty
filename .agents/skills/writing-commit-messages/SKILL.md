@@ -58,5 +58,6 @@ Write commit messages that follow commit style guidelines for the project.
 - Identify any referenced issues/PRs from the diff context or
   branch name.
 - Draft the commit message following the format above.
-- Apply the commit
-- Don't push the commit; leave that to the user.
+- A request to write or draft a commit message produces text only. Apply a
+  commit only when the user has authorized committing the reviewed changes.
+- Do not push; leave that to the user.
