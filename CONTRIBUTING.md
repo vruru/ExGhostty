@@ -1,5 +1,13 @@
 # Contributing to Ghostty
 
+> [!IMPORTANT]
+> This file retains upstream Ghostty contribution guidance. For ExGhostty
+> architecture, build commands, and dependency versions, start with
+> [README.md](README.md), [AGENTS.md](AGENTS.md), and
+> [build.zig.zon](build.zig.zon). Upstream issue, discussion, and pull request
+> instructions target Ghostty. Linked upstream guides also contain Nix
+> instructions for files that are absent from this fork.
+
 This document describes the process of contributing to Ghostty. It is intended
 for anyone considering opening an **issue**, **discussion** or **pull request**.
 For people who are interested in developing Ghostty and technical details behind

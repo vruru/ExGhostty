@@ -1,5 +1,13 @@
 # Developing Ghostty
 
+> [!IMPORTANT]
+> This file retains upstream Ghostty development guidance. For ExGhostty setup,
+> builds, and tests, start with [README.md](README.md) and use the dependencies
+> in [build.zig.zon](build.zig.zon). The `nix/` directory and repository-root
+> `flake.nix` referenced below are absent from this fork; those Nix commands
+> are upstream reference material. Upstream checkout and release instructions
+> target Ghostty rather than the ExGhostty fork.
+
 This document describes the technical details behind Ghostty's development.
 If you'd like to open any pull requests or would like to implement new features
 into Ghostty, please make sure to read our ["Contributing to Ghostty"](CONTRIBUTING.md)

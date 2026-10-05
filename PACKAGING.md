@@ -1,5 +1,13 @@
 # Packaging Ghostty for Distribution
 
+> [!IMPORTANT]
+> This file retains upstream Ghostty packaging guidance. For ExGhostty build
+> outputs and local installation, start with [README.md](README.md) and use
+> the dependencies in [build.zig.zon](build.zig.zon). The `nix/` directory and
+> repository-root `flake.nix` referenced by upstream guidance are absent from
+> this fork. Upstream source tarballs, signatures, and release URLs describe
+> Ghostty distribution; `release.sh` builds a local ExGhostty app bundle.
+
 Ghostty relies on downstream package maintainers to distribute Ghostty to
 end-users. This document provides guidance to package maintainers on how to
 package Ghostty for distribution.
