@@ -42,7 +42,7 @@ here:
 | `zig build run`                 | Runs Ghostty                                                                                                           |
 | `zig build run-valgrind`        | Runs Ghostty under Valgrind to [check for memory leaks](#checking-for-memory-leaks)                                    |
 | `zig build test`                | Runs unit tests (accepts `-Dtest-filter=<filter>` to only run tests whose name matches the filter)                     |
-| `zig build update-translations` | Updates Ghostty's translation strings (see the [Contributor's Guide on Localizing Ghostty](po/README_CONTRIBUTORS.md)) |
+| `zig build update-translations` | Updates Ghostty's translation strings (see the [Contributor's Guide on Localizing Ghostty](https://github.com/ghostty-org/ghostty/blob/main/po/README_CONTRIBUTORS.md)) |
 | `zig build dist`                | Builds a source tarball                                                                                                |
 | `zig build distcheck`           | Builds and validates a source tarball                                                                                  |
 
@@ -249,7 +249,7 @@ that can then be committed and pushed to fix the builds.
 
 ## Including and Updating Translations
 
-See the [Contributor's Guide](po/README_CONTRIBUTORS.md) for more details.
+See the [Contributor's Guide](https://github.com/ghostty-org/ghostty/blob/main/po/README_CONTRIBUTORS.md) for more details.
 
 ## Checking for Memory Leaks
 
